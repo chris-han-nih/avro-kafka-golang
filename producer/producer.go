@@ -2,19 +2,17 @@ package main
 
 import (
 	"fmt"
+	"github.com/chris-han-nih/avro-kafka-golang/producer/config"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"math/rand"
 	"os"
-	"sync"
 )
 
-var wg sync.WaitGroup
-
 func main() {
-	p, err := kafka.NewProducer(&kafka.ConfigMap{
-		"bootstrap.servers": "localhost:29092",
-		"client.id":         "test",
-		"acks":              "all",
-	})
+	configFile := os.Getenv("CONFIG-FILE")
+	conf := config.ReadConfig(configFile)
+
+	p, err := kafka.NewProducer(&conf)
 
 	if err != nil {
 		fmt.Printf("Failed to create producer: %s\n", err)
@@ -28,11 +26,11 @@ func main() {
 			Topic:     &topic,
 			Partition: kafka.PartitionAny,
 		},
+
 		Value: []byte("Test Message")},
 		delivery_chan,
 	)
 
-	wg.Add(1)
 	go func() {
 		for e := range p.Events() {
 			switch ev := e.(type) {
@@ -44,8 +42,27 @@ func main() {
 				}
 			}
 		}
-		p.Flush(1000)
 	}()
 
-	wg.Wait()
+	users := [...]string{"eabara", "jsmith", "sgarcia", "jbernard", "htanaka", "awalther"}
+	items := [...]string{"book", "alarm clock", "t-shirts", "gift card", "batteries"}
+
+	for n := 0; n < 100000; n++ {
+		key := users[rand.Intn(len(users))]
+		data := items[rand.Intn(len(items))]
+		err = p.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{
+				Topic:     &topic,
+				Partition: kafka.PartitionAny,
+			},
+			Key:   []byte(key),
+			Value: []byte(data),
+		}, nil)
+		if err != nil {
+			fmt.Printf("Produce exception: %s\n", err.Error())
+		}
+	}
+
+	p.Flush(1000)
+	p.Close()
 }
